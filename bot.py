@@ -136,15 +136,18 @@ def fetch_ad_details(detail_url):
     }
 
 
-EXAMPLE_MESSAGE = """Hallo,
-ich interessiere mich sehr für Ihre Wohnung und würde diese gerne besichtigen. Kurz zu mir: Ich bin 20 Jahre alt und beginne im Oktober mein Lehramtsstudium an der Universität Erfurt.
-Meine Bewerbungsunterlagen (SCHUFA-Bonitätsauskunft, Ausweiskopie, Einkommensnachweise) kann ich Ihnen gerne vorab zukommen lassen. Da ich Student bin, sind zusätzlich meine Eltern bereit, für das Mietverhältnis zu bürgen, falls das für Sie relevant ist.
+# Generic fallback only (no personal data) — the real example lives in the
+# private profile secret ("example_message"), never committed to this public repo.
+DEFAULT_EXAMPLE_MESSAGE = """Hallo,
+ich interessiere mich sehr für Ihre Wohnung und würde diese gerne besichtigen. Kurz zu mir: [kurze Selbstvorstellung].
+Ich kann bei Bedarf gerne Bewerbungsunterlagen vorab zusenden.
 Über einen Besichtigungstermin würde ich mich sehr freuen. Wann würde es Ihnen passen?
 Viele Grüße
-Tim Luca Jäger"""
+[Name]"""
 
 
 def generate_message_draft(listing, description, seller_name, is_commercial, profile, api_key):
+    example_message = profile.get("example_message", DEFAULT_EXAMPLE_MESSAGE)
     profile_lines = [
         f"Name (Absender): {profile.get('name', '')}",
         f"Status: {profile.get('status', 'keine Angabe')}",
@@ -159,7 +162,7 @@ def generate_message_draft(listing, description, seller_name, is_commercial, pro
         "Formuliere eine Kontaktanfrage auf Deutsch fuer eine Wohnungsanzeige auf "
         "Kleinanzeigen, im Stil des folgenden Beispiels (Ton, Laenge, Inhalte wie "
         "Selbstvorstellung, Angebot der Unterlagen, Buergschaft der Eltern):\n\n"
-        f"--- BEISPIEL ---\n{EXAMPLE_MESSAGE}\n--- ENDE BEISPIEL ---\n\n"
+        f"--- BEISPIEL ---\n{example_message}\n--- ENDE BEISPIEL ---\n\n"
         f"Anzeigentitel: {listing['title']}\n"
         f"Anzeigenbeschreibung:\n{description[:3000] or '(keine Beschreibung vorhanden)'}\n\n"
         f"Name/Account des Inserenten auf Kleinanzeigen: "
