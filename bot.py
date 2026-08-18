@@ -35,21 +35,31 @@ logging.basicConfig(
 )
 
 
+def _clean_env(name):
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    return value.strip().lstrip("﻿")
+
+
 def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         config = json.load(f)
 
     # Local-only secrets file (never committed to git)
     if SECRETS_PATH.exists():
-        with open(SECRETS_PATH, "r", encoding="utf-8") as f:
+        with open(SECRETS_PATH, "r", encoding="utf-8-sig") as f:
             config.update(json.load(f))
 
-    # Environment variables take precedence (used in GitHub Actions secrets)
-    config["telegram_token"] = os.environ.get("TELEGRAM_TOKEN", config.get("telegram_token"))
-    config["telegram_chat_id"] = os.environ.get("TELEGRAM_CHAT_ID", config.get("telegram_chat_id"))
-    config["anthropic_api_key"] = os.environ.get("ANTHROPIC_API_KEY", config.get("anthropic_api_key"))
-    if os.environ.get("PROFILE_JSON"):
-        config["profile"] = json.loads(os.environ["PROFILE_JSON"])
+    # Environment variables take precedence (used in GitHub Actions secrets).
+    # Values are cleaned of stray BOM/whitespace characters that some shells
+    # (e.g. PowerShell piping to a native process) can prepend.
+    config["telegram_token"] = _clean_env("TELEGRAM_TOKEN") or config.get("telegram_token")
+    config["telegram_chat_id"] = _clean_env("TELEGRAM_CHAT_ID") or config.get("telegram_chat_id")
+    config["anthropic_api_key"] = _clean_env("ANTHROPIC_API_KEY") or config.get("anthropic_api_key")
+    profile_json = _clean_env("PROFILE_JSON")
+    if profile_json:
+        config["profile"] = json.loads(profile_json)
     return config
 
 
