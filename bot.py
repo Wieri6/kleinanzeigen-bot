@@ -48,6 +48,8 @@ def load_config():
     config["telegram_token"] = os.environ.get("TELEGRAM_TOKEN", config.get("telegram_token"))
     config["telegram_chat_id"] = os.environ.get("TELEGRAM_CHAT_ID", config.get("telegram_chat_id"))
     config["anthropic_api_key"] = os.environ.get("ANTHROPIC_API_KEY", config.get("anthropic_api_key"))
+    if os.environ.get("PROFILE_JSON"):
+        config["profile"] = json.loads(os.environ["PROFILE_JSON"])
     return config
 
 
