@@ -23,6 +23,17 @@ LOG_PATH = BASE_DIR / "bot.log"
 GESUCH_TITLE_PATTERN = re.compile(r"^\s*(ich\s+)?suche\b", re.IGNORECASE)
 ROOM_COUNT_PATTERN = re.compile(r"(\d+(?:,\d+)?)\s*Zi\.", re.IGNORECASE)
 MAX_ROOMS = 2
+NOVEMBER_AVAILABILITY_PATTERN = re.compile(
+    r"ab\s+(?:dem\s+)?(?:\d{1,2}\.?\s*)?november\b"
+    r"|ab\s+\d{1,2}\.\s*11\.?(?:\d{2,4})?\b"
+    r"|verf(?:ü|ue)gbar\s+ab\s+(?:dem\s+)?(?:\d{1,2}\.?\s*)?november\b",
+    re.IGNORECASE,
+)
+
+
+def mentions_november_availability(*texts):
+    combined = " ".join(t for t in texts if t)
+    return bool(NOVEMBER_AVAILABILITY_PATTERN.search(combined))
 
 HEADERS = {
     "User-Agent": (
@@ -312,6 +323,22 @@ def main():
         notified_ids.update(l["id"] for l in listings)
     else:
         for listing in new_listings:
+            ad_details = None
+            try:
+                ad_details = fetch_ad_details(listing["url"])
+                if mentions_november_availability(listing["title"], ad_details["description"]):
+                    logging.info(
+                        "Uebersprungen (erst ab November verfuegbar): %s (%s)",
+                        listing["title"], listing["id"],
+                    )
+                    notified_ids.add(listing["id"])
+                    continue
+            except Exception:
+                logging.exception(
+                    "Konnte Verfuegbarkeit nicht pruefen fuer %s - benachrichtige trotzdem",
+                    listing["id"],
+                )
+
             try:
                 send_telegram_message(
                     config["telegram_token"],
@@ -331,7 +358,8 @@ def main():
             if not api_key:
                 continue
             try:
-                ad_details = fetch_ad_details(listing["url"])
+                if ad_details is None:
+                    ad_details = fetch_ad_details(listing["url"])
                 draft = generate_message_draft(
                     listing,
                     ad_details["description"],
