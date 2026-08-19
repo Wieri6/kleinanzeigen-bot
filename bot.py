@@ -175,6 +175,29 @@ def fetch_listings(search_url):
     return listings
 
 
+def extract_detail_value(soup, label):
+    for li in soup.select(".addetailslist--detail"):
+        value_tag = li.select_one(".addetailslist--detail--value")
+        if not value_tag:
+            continue
+        value_text = value_tag.get_text(strip=True)
+        li_label = li.get_text(strip=True).replace(value_text, "", 1).strip()
+        if li_label == label:
+            return value_text
+    return None
+
+
+def parse_euro_amount(text):
+    if not text:
+        return None
+    digits = re.sub(r"[^\d,.]", "", text)
+    digits = digits.replace(".", "").replace(",", ".")
+    try:
+        return float(digits)
+    except ValueError:
+        return None
+
+
 def fetch_ad_details(detail_url):
     resp = requests.get(detail_url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
@@ -187,11 +210,32 @@ def fetch_ad_details(detail_url):
     seller_name = name_tag.get_text(strip=True) if name_tag else ""
     is_commercial = "Gewerblicher Nutzer" in soup.select_one("#viewad-contact").get_text() if soup.select_one("#viewad-contact") else False
 
+    warmmiete = parse_euro_amount(extract_detail_value(soup, "Warmmiete"))
+    kaltmiete = parse_euro_amount(extract_detail_value(soup, "Kaltmiete"))
+
     return {
         "description": description,
         "seller_name": seller_name,
         "is_commercial": is_commercial,
+        "warmmiete": warmmiete,
+        "kaltmiete": kaltmiete,
     }
+
+
+MAX_WARMMIETE = 500
+
+
+def exceeds_budget(listing, ad_details):
+    if ad_details.get("warmmiete") is not None:
+        return ad_details["warmmiete"] > MAX_WARMMIETE
+    if ad_details.get("kaltmiete") is not None:
+        # No Nebenkosten stated - Kaltmiete alone is a lower bound on Warmmiete,
+        # so only filter if even the Kaltmiete already exceeds the budget.
+        return ad_details["kaltmiete"] > MAX_WARMMIETE
+    price_from_search = parse_euro_amount(listing.get("price"))
+    if price_from_search is not None:
+        return price_from_search > MAX_WARMMIETE
+    return False  # unknown - fail open rather than miss a real listing
 
 
 # Generic fallback only (no personal data) — the real example lives in the
@@ -409,6 +453,13 @@ def main():
                     logging.info(
                         "Uebersprungen (erst ab November oder spaeter verfuegbar): %s (%s)",
                         listing["title"], listing["id"],
+                    )
+                    notified_ids.add(listing["id"])
+                    continue
+                if exceeds_budget(listing, ad_details):
+                    logging.info(
+                        "Uebersprungen (Warmmiete > %d Euro): %s (%s)",
+                        MAX_WARMMIETE, listing["title"], listing["id"],
                     )
                     notified_ids.add(listing["id"])
                     continue
