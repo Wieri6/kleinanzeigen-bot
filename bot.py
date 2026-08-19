@@ -20,6 +20,8 @@ SEEN_PATH = BASE_DIR / "seen.json"
 LOG_PATH = BASE_DIR / "bot.log"
 
 GESUCH_TITLE_PATTERN = re.compile(r"^\s*(ich\s+)?suche\b", re.IGNORECASE)
+ROOM_COUNT_PATTERN = re.compile(r"(\d+(?:,\d+)?)\s*Zi\.", re.IGNORECASE)
+MAX_ROOMS = 2
 
 HEADERS = {
     "User-Agent": (
@@ -104,6 +106,12 @@ def fetch_listings(search_url):
 
         if GESUCH_TITLE_PATTERN.match(title):
             continue
+
+        tags_tag = article.select_one(".aditem-main--middle--tags")
+        if tags_tag:
+            room_match = ROOM_COUNT_PATTERN.search(tags_tag.get_text())
+            if room_match and float(room_match.group(1).replace(",", ".")) > MAX_ROOMS:
+                continue
 
         listings.append(
             {
@@ -204,6 +212,11 @@ def generate_message_draft(listing, description, seller_name, is_commercial, pro
                 "- Ist der Name/Account kein normaler Personenname (Fantasiename, "
                 "Nutzername, anonym, kein Name angegeben) -> neutrale Anrede wie "
                 "'Hallo,' oder 'Sehr geehrte Damen und Herren,' ohne den Namen zu nennen\n\n"
+                "WICHTIG: Die Person studiert an der UNIVERSITAET Erfurt, NICHT an der "
+                "Fachhochschule (FH) Erfurt. Erwaehne niemals 'Fachhochschule' oder 'FH' "
+                "in Bezug auf die Person, auch wenn die Anzeige FH/Uni-Naehe bewirbt - "
+                "dann nur 'Uni-Naehe' bzw. 'Naehe zur Universitaet' aufgreifen, falls "
+                "ueberhaupt.\n\n"
                 "Baue zusaetzlich 1 konkretes Detail aus der Anzeigenbeschreibung ein "
                 "(z.B. Lage, Ausstattung, Zustand), sofern vorhanden. Nutze "
                 "ausschliesslich die angegebenen Fakten zur Person, erfinde nichts hinzu. "
