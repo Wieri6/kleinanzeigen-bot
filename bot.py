@@ -273,6 +273,19 @@ def generate_message_draft(listing, description, seller_name, is_commercial, pro
                 "in Bezug auf die Person, auch wenn die Anzeige FH/Uni-Naehe bewirbt - "
                 "dann nur 'Uni-Naehe' bzw. 'Naehe zur Universitaet' aufgreifen, falls "
                 "ueberhaupt.\n\n"
+                "WICHTIG - Einzugstermin: Suche in der Anzeigenbeschreibung aktiv nach "
+                "einem konkreten Verfuegbarkeitsdatum (z.B. 'Verfuegbar ab: 01.09.2026', "
+                "'verfuegbar ab September', 'ab sofort', 'ab 01.09.'). Falls vorhanden, "
+                "MUSST du den konkreten Monat/Zeitpunkt woertlich im Text nennen, nicht "
+                "nur allgemein 'flexibel' schreiben. Beispiel: steht in der Anzeige "
+                "'Verfuegbar ab: 01.09.2026', schreibe woertlich sinngemaess 'Ich kann "
+                "auch ab September gerne einziehen' oder 'Ein Einzug bereits im "
+                "September waere fuer mich ebenfalls moeglich' - IMMER den Monatsnamen "
+                "ausschreiben, nie nur das Datum in Ziffern uebernehmen. Das gilt nur, "
+                "wenn dieser Termin mit dem Einzugstermin/der Flexibilitaet der Person "
+                "(siehe Fakten zur Person) vereinbar ist. Ist in der Anzeige KEIN "
+                "Termin genannt, bleibe bei der eigenen Einzugsangabe aus den Fakten "
+                "zur Person.\n\n"
                 "Baue zusaetzlich 1 konkretes Detail aus der Anzeigenbeschreibung ein "
                 "(z.B. Lage, Ausstattung, Zustand), sofern vorhanden. Nutze "
                 "ausschliesslich die angegebenen Fakten zur Person, erfinde nichts hinzu. "
@@ -288,7 +301,17 @@ def generate_message_draft(listing, description, seller_name, is_commercial, pro
     )
     resp.raise_for_status()
     data = resp.json()
-    return data["content"][0]["text"].strip()
+    draft = data["content"][0]["text"].strip()
+    return strip_em_dashes(draft)
+
+
+def strip_em_dashes(text):
+    """Deterministic safety net: the model doesn't always follow the
+    no-em-dash instruction, so enforce it in code too."""
+    text = re.sub(r"\s*[–—]\s*", ", ", text)
+    text = re.sub(r",\s*,", ",", text)
+    text = re.sub(r",(\s*[.!?])", r"\1", text)
+    return text
 
 
 def send_telegram_message(token, chat_id, text):
