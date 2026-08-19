@@ -8,7 +8,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import requests
@@ -23,16 +23,55 @@ LOG_PATH = BASE_DIR / "bot.log"
 GESUCH_TITLE_PATTERN = re.compile(r"^\s*(ich\s+)?suche\b", re.IGNORECASE)
 ROOM_COUNT_PATTERN = re.compile(r"(\d+(?:,\d+)?)\s*Zi\.", re.IGNORECASE)
 MAX_ROOMS = 2
-NOVEMBER_AVAILABILITY_PATTERN = re.compile(
-    r"ab\s*:?\s*(?:dem\s+)?(?:\d{1,2}\.?\s*)?november\b"
-    r"|ab\s*:?\s*\d{1,2}\.\s*11\.?(?:\d{2,4})?\b",
+MONTH_NAMES = {
+    "januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5, "juni": 6,
+    "juli": 7, "august": 8, "september": 9, "oktober": 10, "november": 11, "dezember": 12,
+}
+_MONTH_NAME_ALTERNATION = "|".join(MONTH_NAMES.keys())
+
+AVAILABILITY_DATE_PATTERN = re.compile(
+    r"ab\s*:?\s*(?:dem\s+)?(\d{1,2})\.\s*(\d{1,2})\.?\s*(\d{2,4})?"
+    rf"|ab\s*:?\s*(?:dem\s+)?(?:\d{{1,2}}\.?\s*)?({_MONTH_NAME_ALTERNATION})\s*(\d{{4}})?",
     re.IGNORECASE,
 )
 
 
-def mentions_november_availability(*texts):
+def parse_availability_dates(text, today):
+    """Best-effort extraction of every 'available from' date mentioned in text."""
+    dates = []
+    for m in AVAILABILITY_DATE_PATTERN.finditer(text):
+        try:
+            if m.group(1) and m.group(2):
+                day, month = int(m.group(1)), int(m.group(2))
+                year_str = m.group(3)
+            else:
+                day, month = 1, MONTH_NAMES[m.group(4).lower()]
+                year_str = m.group(5)
+            if not (1 <= month <= 12 and 1 <= day <= 31):
+                continue
+            if year_str:
+                year = int(year_str)
+                if year < 100:
+                    year += 2000
+            else:
+                # No year given - assume this year, unless that month has
+                # already passed, in which case it must mean next year.
+                year = today.year if month >= today.month else today.year + 1
+            day = min(day, 28) if month == 2 else day
+            dates.append(date(year, month, day))
+        except (ValueError, KeyError):
+            continue
+    return dates
+
+
+def available_too_late(*texts, today=None, cutoff_month=11):
+    """True if the listing's earliest stated 'available from' date is on/after
+    November 1st (or later) - i.e. later than the desired move-in window."""
+    today = today or date.today()
+    cutoff = date(today.year if today.month < cutoff_month else today.year + 1, cutoff_month, 1)
     combined = " ".join(t for t in texts if t)
-    return bool(NOVEMBER_AVAILABILITY_PATTERN.search(combined))
+    found_dates = parse_availability_dates(combined, today)
+    return any(d >= cutoff for d in found_dates)
 
 HEADERS = {
     "User-Agent": (
@@ -330,9 +369,9 @@ def main():
             ad_details = None
             try:
                 ad_details = fetch_ad_details(listing["url"])
-                if mentions_november_availability(listing["title"], ad_details["description"]):
+                if available_too_late(listing["title"], ad_details["description"]):
                     logging.info(
-                        "Uebersprungen (erst ab November verfuegbar): %s (%s)",
+                        "Uebersprungen (erst ab November oder spaeter verfuegbar): %s (%s)",
                         listing["title"], listing["id"],
                     )
                     notified_ids.add(listing["id"])
