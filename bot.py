@@ -341,32 +341,39 @@ def running_in_github_actions():
     return os.environ.get("GITHUB_ACTIONS") == "true"
 
 
+# On Windows, a console-subsystem child process (like git.exe) spawned from a
+# windowless parent (pythonw.exe) briefly flashes its own console window.
+# CREATE_NO_WINDOW suppresses that.
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
+
+def run_git(*args, **kwargs):
+    return subprocess.run(
+        ["git", *args], cwd=BASE_DIR, creationflags=_NO_WINDOW, **kwargs,
+    )
+
+
 def git_pull_latest_seen():
     try:
-        subprocess.run(
-            ["git", "pull", "--quiet"],
-            cwd=BASE_DIR, check=True, capture_output=True, timeout=30,
-        )
+        run_git("pull", "--quiet", check=True, capture_output=True, timeout=30)
     except Exception:
         logging.exception("Konnte seen.json nicht von GitHub abgleichen (lokaler Stand wird verwendet)")
 
 
 def git_push_seen(had_new_listings):
     try:
-        subprocess.run(["git", "add", "seen.json"], cwd=BASE_DIR, check=True, capture_output=True, timeout=15)
-        diff = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"], cwd=BASE_DIR, capture_output=True, timeout=15,
-        )
+        run_git("add", "seen.json", check=True, capture_output=True, timeout=15)
+        diff = run_git("diff", "--cached", "--quiet", capture_output=True, timeout=15)
         if diff.returncode == 0:
             return  # nothing changed, nothing to push
         message = "Update seen listings (local)" if had_new_listings else "Sync seen listings (local)"
-        subprocess.run(["git", "commit", "-m", message, "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=15)
+        run_git("commit", "-m", message, "--quiet", check=True, capture_output=True, timeout=15)
         try:
-            subprocess.run(["git", "push", "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=30)
+            run_git("push", "--quiet", check=True, capture_output=True, timeout=30)
         except subprocess.CalledProcessError:
             # Remote moved on (e.g. GitHub Actions pushed in the meantime) - rebase and retry once.
-            subprocess.run(["git", "pull", "--rebase", "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=30)
-            subprocess.run(["git", "push", "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=30)
+            run_git("pull", "--rebase", "--quiet", check=True, capture_output=True, timeout=30)
+            run_git("push", "--quiet", check=True, capture_output=True, timeout=30)
     except Exception:
         logging.exception("Konnte seen.json nicht zu GitHub pushen (Cloud-Task uebernimmt notfalls)")
 
