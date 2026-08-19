@@ -24,9 +24,8 @@ GESUCH_TITLE_PATTERN = re.compile(r"^\s*(ich\s+)?suche\b", re.IGNORECASE)
 ROOM_COUNT_PATTERN = re.compile(r"(\d+(?:,\d+)?)\s*Zi\.", re.IGNORECASE)
 MAX_ROOMS = 2
 NOVEMBER_AVAILABILITY_PATTERN = re.compile(
-    r"ab\s+(?:dem\s+)?(?:\d{1,2}\.?\s*)?november\b"
-    r"|ab\s+\d{1,2}\.\s*11\.?(?:\d{2,4})?\b"
-    r"|verf(?:ü|ue)gbar\s+ab\s+(?:dem\s+)?(?:\d{1,2}\.?\s*)?november\b",
+    r"ab\s*:?\s*(?:dem\s+)?(?:\d{1,2}\.?\s*)?november\b"
+    r"|ab\s*:?\s*\d{1,2}\.\s*11\.?(?:\d{2,4})?\b",
     re.IGNORECASE,
 )
 
@@ -294,7 +293,12 @@ def git_push_seen(had_new_listings):
             return  # nothing changed, nothing to push
         message = "Update seen listings (local)" if had_new_listings else "Sync seen listings (local)"
         subprocess.run(["git", "commit", "-m", message, "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=15)
-        subprocess.run(["git", "push", "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=30)
+        try:
+            subprocess.run(["git", "push", "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=30)
+        except subprocess.CalledProcessError:
+            # Remote moved on (e.g. GitHub Actions pushed in the meantime) - rebase and retry once.
+            subprocess.run(["git", "pull", "--rebase", "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=30)
+            subprocess.run(["git", "push", "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=30)
     except Exception:
         logging.exception("Konnte seen.json nicht zu GitHub pushen (Cloud-Task uebernimmt notfalls)")
 
