@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -258,8 +259,39 @@ def format_message(listing):
     )
 
 
+def running_in_github_actions():
+    return os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+def git_pull_latest_seen():
+    try:
+        subprocess.run(
+            ["git", "pull", "--quiet"],
+            cwd=BASE_DIR, check=True, capture_output=True, timeout=30,
+        )
+    except Exception:
+        logging.exception("Konnte seen.json nicht von GitHub abgleichen (lokaler Stand wird verwendet)")
+
+
+def git_push_seen(had_new_listings):
+    try:
+        subprocess.run(["git", "add", "seen.json"], cwd=BASE_DIR, check=True, capture_output=True, timeout=15)
+        diff = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"], cwd=BASE_DIR, capture_output=True, timeout=15,
+        )
+        if diff.returncode == 0:
+            return  # nothing changed, nothing to push
+        message = "Update seen listings (local)" if had_new_listings else "Sync seen listings (local)"
+        subprocess.run(["git", "commit", "-m", message, "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=15)
+        subprocess.run(["git", "push", "--quiet"], cwd=BASE_DIR, check=True, capture_output=True, timeout=30)
+    except Exception:
+        logging.exception("Konnte seen.json nicht zu GitHub pushen (Cloud-Task uebernimmt notfalls)")
+
+
 def main():
     config = load_config()
+    if not running_in_github_actions():
+        git_pull_latest_seen()
     seen = load_seen()
     first_run = len(seen) == 0
 
@@ -322,6 +354,8 @@ def main():
 
     seen.update(notified_ids)
     save_seen(seen)
+    if not running_in_github_actions():
+        git_push_seen(had_new_listings=bool(notified_ids) and not first_run)
 
 
 if __name__ == "__main__":
