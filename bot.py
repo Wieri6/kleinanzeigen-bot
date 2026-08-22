@@ -198,6 +198,22 @@ def parse_euro_amount(text):
         return None
 
 
+PHONE_CANDIDATE_PATTERN = re.compile(r"(?:\+49[\s/-]?\d[\d\s/-]{7,16}\d)|(?:0\d[\d\s/-]{7,16}\d)")
+
+
+def extract_phone_number(text):
+    if not text:
+        return None
+    for match in PHONE_CANDIDATE_PATTERN.finditer(text):
+        candidate = match.group().strip()
+        digits = re.sub(r"\D", "", candidate)
+        if candidate.startswith("+49"):
+            digits = digits[2:]  # strip "49" country code from digit count
+        if 9 <= len(digits) <= 12:
+            return candidate
+    return None
+
+
 def fetch_ad_details(detail_url):
     resp = requests.get(detail_url, headers=HEADERS, timeout=20)
     resp.raise_for_status()
@@ -212,6 +228,7 @@ def fetch_ad_details(detail_url):
 
     warmmiete = parse_euro_amount(extract_detail_value(soup, "Warmmiete"))
     kaltmiete = parse_euro_amount(extract_detail_value(soup, "Kaltmiete"))
+    phone_number = extract_phone_number(description)
 
     return {
         "description": description,
@@ -219,6 +236,7 @@ def fetch_ad_details(detail_url):
         "is_commercial": is_commercial,
         "warmmiete": warmmiete,
         "kaltmiete": kaltmiete,
+        "phone_number": phone_number,
     }
 
 
@@ -356,6 +374,56 @@ def strip_em_dashes(text):
     text = re.sub(r",\s*,", ",", text)
     text = re.sub(r",(\s*[.!?])", r"\1", text)
     return text
+
+
+def generate_call_script(listing, description, profile, api_key):
+    profile_lines = [
+        f"Name (Absender): {profile.get('name', '')}",
+        f"Status: {profile.get('status', 'keine Angabe')}",
+        f"Einzugstermin: {profile.get('move_in', 'keine Angabe')}",
+    ]
+    if profile.get("notes"):
+        profile_lines.append(f"Sonstiges: {profile['notes']}")
+
+    user_prompt = (
+        "Erstelle einen kurzen, stichpunktartigen Leitfaden auf Deutsch, was man "
+        "beim Anruf wegen dieser Wohnungsanzeige sagen und fragen koennte. Kein "
+        "vollstaendiges Skript zum Ablesen, sondern 4-6 knappe Stichpunkte.\n\n"
+        f"Anzeigentitel: {listing['title']}\n"
+        f"Anzeigenbeschreibung:\n{description[:2000] or '(keine Beschreibung vorhanden)'}\n\n"
+        f"Fakten zur anrufenden Person:\n" + "\n".join(profile_lines)
+    )
+
+    resp = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json={
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 300,
+            "system": (
+                "Du hilfst bei Wohnungssuche in Deutschland. Erstelle kurze "
+                "Stichpunkte (keine ganzen Saetze, keine Anrede/Grussformel) fuer "
+                "ein Telefonat wegen einer Wohnungsanzeige: 1) sich kurz vorstellen "
+                "(Name, Status), 2) fragen ob die Wohnung noch verfuegbar ist, 3) "
+                "nach einem Besichtigungstermin fragen, 4) ggf. 1 konkretes Detail "
+                "aus der Anzeige ansprechen, sofern vorhanden, 5) bei Bedarf "
+                "erwaehnen dass Unterlagen/Buergschaft bereitstehen. Nutze "
+                "ausschliesslich die angegebenen Fakten zur Person, erfinde nichts "
+                "hinzu. Verwende KEINE Gedankenstriche. Gib nur die Stichpunkte "
+                "aus, ohne Erklaerung oder Meta-Kommentare."
+            ),
+            "messages": [{"role": "user", "content": user_prompt}],
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    script = data["content"][0]["text"].strip()
+    return strip_em_dashes(script)
 
 
 def send_telegram_message(token, chat_id, text):
@@ -509,6 +577,28 @@ def main():
                     "Fehler beim Erstellen/Senden des Nachrichtenentwurfs fuer %s",
                     listing["id"],
                 )
+
+            phone_number = (ad_details or {}).get("phone_number")
+            if phone_number:
+                try:
+                    call_script = generate_call_script(
+                        listing, ad_details["description"], config.get("profile", {}), api_key,
+                    )
+                    phone_message = (
+                        f"📞 <b>Telefonnummer:</b> {html.escape(phone_number)}\n\n"
+                        f"<b>Anruf-Leitfaden:</b>\n{html.escape(call_script)}"
+                    )
+                    send_telegram_message(
+                        config["telegram_token"],
+                        config["telegram_chat_id"],
+                        phone_message,
+                    )
+                    logging.info("Telefonnummer gesendet fuer %s", listing["id"])
+                except Exception:
+                    logging.exception(
+                        "Fehler beim Senden der Telefonnummer fuer %s",
+                        listing["id"],
+                    )
 
     seen.update(notified_ids)
     save_seen(seen)
