@@ -21,6 +21,7 @@ SEEN_PATH = BASE_DIR / "seen.json"
 LOG_PATH = BASE_DIR / "bot.log"
 
 GESUCH_TITLE_PATTERN = re.compile(r"^\s*(ich\s+)?suche\b", re.IGNORECASE)
+TAUSCH_TITLE_PATTERN = re.compile(r"\btausch(wohnung)?\b", re.IGNORECASE)
 ROOM_COUNT_PATTERN = re.compile(r"(\d+(?:,\d+)?)\s*Zi\.", re.IGNORECASE)
 MAX_ROOMS = 2
 MONTH_NAMES = {
@@ -154,7 +155,7 @@ def fetch_listings(search_url):
         location_tag = article.select_one(".aditem-main--top--left")
         location = location_tag.get_text(strip=True) if location_tag else "?"
 
-        if GESUCH_TITLE_PATTERN.match(title):
+        if GESUCH_TITLE_PATTERN.match(title) or TAUSCH_TITLE_PATTERN.search(title):
             continue
 
         tags_tag = article.select_one(".aditem-main--middle--tags")
