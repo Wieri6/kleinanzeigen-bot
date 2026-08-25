@@ -21,7 +21,7 @@ SEEN_PATH = BASE_DIR / "seen.json"
 LOG_PATH = BASE_DIR / "bot.log"
 
 GESUCH_TITLE_PATTERN = re.compile(r"^\s*(ich\s+)?suche\b", re.IGNORECASE)
-TAUSCH_TITLE_PATTERN = re.compile(r"\btausch(wohnung)?\b", re.IGNORECASE)
+TAUSCH_TITLE_PATTERN = re.compile(r"tausch", re.IGNORECASE)
 ROOM_COUNT_PATTERN = re.compile(r"(\d+(?:,\d+)?)\s*Zi\.", re.IGNORECASE)
 MAX_ROOMS = 2
 MONTH_NAMES = {
